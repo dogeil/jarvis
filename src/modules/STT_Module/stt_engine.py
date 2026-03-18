@@ -1,6 +1,5 @@
 import queue
 import json
-import sounddevice as sd
 from vosk import Model, KaldiRecognizer
 
 class STTEngine:
@@ -15,8 +14,23 @@ class STTEngine:
 
     def listen(self):
         """Generator that yields text when speech is recognized."""
-        with sd.RawInputStream(samplerate=16000, blocksize=8000, dtype='int16',
-                               channels=1, callback=self._callback):
+        # Import sounddevice lazily so this module can be imported in environments
+        # that don't have PortAudio installed (e.g., GitHub Actions runners).
+        try:
+            import sounddevice as sd  # type: ignore
+        except OSError as e:
+            raise RuntimeError(
+                "Audio backend unavailable (PortAudio missing). "
+                "Install PortAudio (system) to use STT listening."
+            ) from e
+
+        with sd.RawInputStream(
+            samplerate=16000,
+            blocksize=8000,
+            dtype="int16",
+            channels=1,
+            callback=self._callback,
+        ):
             print("Listening...")
             while True:
                 data = self.audio_queue.get()
