@@ -8,9 +8,9 @@ import sys
 # Ensure the 'src' directory is in the path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), 'src')))
 
-from modules.Hand_Module.hand_engine import HandEngine
-from modules.STT_Module.stt_engine import STTEngine
-from modules.TTS_Module.tts_engine import TTSEngine
+from src.modules.Hand_Module.hand_engine import HandEngine
+from src.modules.STT_Module.stt_engine import STTEngine
+from src.modules.TTS_Module.tts_engine import TTSEngine
 
 def run_hand_module():
     print("[Launcher] Starting Hand Module...")
