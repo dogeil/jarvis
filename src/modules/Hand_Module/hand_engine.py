@@ -4,6 +4,7 @@ from mediapipe.tasks import python
 from mediapipe.tasks.python import vision
 import os
 import time
+import queue as queue_mod
 from .gesture_logic import GestureProcessor
 
 class HandEngine:
@@ -59,7 +60,13 @@ class HandEngine:
         if (not is_open) and (raised == 4) and self._thumb_closed(lm): labels.append("FOUR_FINGERS")
         if raised == 3: labels.append("THREE_FINGERS")
         elif raised == 2: labels.append("TWO_FINGERS")
-        elif (raised == 1) and (not is_thumb): labels.append("ONE_FINGER")
+        elif (raised == 1) and (not is_thumb):
+            # Distinguish "middle finger only" from generic "one finger"
+            middle_up = self._finger_up(lm, 12, 10)
+            if middle_up:
+                labels.append("MIDDLE_FINGER_UP")
+            else:
+                labels.append("ONE_FINGER")
         return labels
 
     def custom_labels_four_to_one(self, lm, is_open_palm: bool, is_thumb_up: bool) -> list[str]:
@@ -70,18 +77,53 @@ class HandEngine:
         return self.get_custom_labels(lm, is_open=is_open_palm, is_thumb=is_thumb_up)
 
     # --- MAIN LOOP WITH YOUR CV2 TEXT LOGIC ---
-    def start(self):
+    def start(self, command_queue=None, sfx_command_queue=None):
         # CAP_DSHOW is more stable for Windows to prevent the 'purple line' glitches
         cap = cv2.VideoCapture(0, cv2.CAP_DSHOW)
         
+        default_width = 1024
+        default_height = 768
+        current_width = default_width
+        current_height = default_height
+
+        requested_width = default_width
+        requested_height = default_height
+
+        if command_queue is not None:
+            print("[Hand Module] Listening for commands: /res <w> <h>, /default (from launcher console).")
+
         # Lowering resolution slightly ensures the CPU can handle API + Vision
-        cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1024)
-        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 768)
+        cap.set(cv2.CAP_PROP_FRAME_WIDTH, default_width)
+        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, default_height)
         
         prev_time = 0
         
         try:
             while cap.isOpened():
+                # Apply any requested resolution changes from the launcher.
+                if command_queue is not None:
+                    try:
+                        # Drain the queue and keep the most recent command.
+                        while True:
+                            cmd = command_queue.get_nowait()
+                            if not cmd:
+                                continue
+                            if cmd[0] == "res":
+                                requested_width, requested_height = int(cmd[1]), int(cmd[2])
+                            elif cmd[0] == "default":
+                                requested_width, requested_height = default_width, default_height
+                            elif cmd[0] in {"quit", "exit"}:
+                                cap.release()
+                                cv2.destroyAllWindows()
+                                return
+                    except queue_mod.Empty:
+                        pass
+
+                if requested_width != current_width or requested_height != current_height:
+                    cap.set(cv2.CAP_PROP_FRAME_WIDTH, requested_width)
+                    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, requested_height)
+                    current_width, current_height = requested_width, requested_height
+
                 ret, frame = cap.read()
                 if not ret or frame is None:
                     continue
@@ -130,6 +172,7 @@ class HandEngine:
                 # --- UI OVERLAY ---
                 # Draw FPS (Top Right)
                 cv2.putText(frame, f"FPS: {int(fps)}", (w - 120, 40), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+                cv2.putText(frame, f"Res(frame): {w}x{h}", (w - 260, 70), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
 
                 # Draw Canned (Top Left)
                 if recognition_result.gestures and len(recognition_result.gestures) > 0:
@@ -138,7 +181,7 @@ class HandEngine:
 
                 # Draw Custom Labels
                 y_offset = 80
-                for label in ["FIVE_FINGERS", "FOUR_FINGERS", "THREE_FINGERS", "TWO_FINGERS", "ONE_FINGER"]:
+                for label in ["FIVE_FINGERS", "FOUR_FINGERS", "THREE_FINGERS", "TWO_FINGERS", "ONE_FINGER", "MIDDLE_FINGER_UP"]:
                     if label in custom_labels_detected:
                         cv2.putText(frame, f"Custom: {label}", (20, y_offset), cv2.FONT_HERSHEY_SIMPLEX, 1.0, (0, 255, 255), 2)
                         y_offset += 40
@@ -150,6 +193,13 @@ class HandEngine:
                     if action == ("EXIT_JARVIS",):
                         print("[Hand Module] Exit gesture detected. Shutting down Jarvis...")
                         break
+                    if (
+                        action[0] == "SFX_PLAY"
+                        and sfx_command_queue is not None
+                        and len(action) >= 2
+                    ):
+                        # Fan out sound effects via the dedicated SFX process.
+                        sfx_command_queue.put(("play", action[1]))
 
                 cv2.imshow("Jarvis Hand Module", frame)
                 if cv2.waitKey(1) & 0xFF == 27: break

@@ -12,6 +12,8 @@ class GestureProcessor:
             # (("Open_Palm", "Closed_Fist"), 1.0): ("alt", "tab"),
             # (("Thumb_Up", "Thumb_Down"), 2.0): ("alt", "tab"),
             (("Victory", "ILoveYou"), 2.0): ("alt", "tab"),
+            # Custom trigger: middle finger only -> play vine-boom sound effect.
+            (("MIDDLE_FINGER_UP",), 1.0): ("SFX_PLAY", "vine-boom.wav"),
         }
         self.history = []
         self.prev_active = set()
