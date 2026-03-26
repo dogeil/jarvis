@@ -8,20 +8,25 @@ import sys
 # Ensure the 'src' directory is in the path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), 'src')))
 
-from src.modules.Hand_Module.hand_engine import HandEngine
 from src.modules.STT_Module.stt_engine import STTEngine
 from src.modules.TTS_Module.tts_engine import TTSEngine
 from src.modules.SFX_Module.sfx_engine import SFXEngine
+from src.modules.Vision_Module.vision_module import VisionModule
+from src.modules.Vision_Module.engines.hand_engine import HandEngine
 
-def run_hand_module(hand_command_queue: "multiprocessing.Queue", sfx_command_queue: "multiprocessing.Queue"):
-    print("[Launcher] Starting Hand Module...")
+def run_vision_module(
+    hand_command_queue: "multiprocessing.Queue",
+    sfx_command_queue: "multiprocessing.Queue",
+):
+    print("[Launcher] Starting Vision Module...")
     root_dir = os.path.dirname(os.path.abspath(__file__))
     model_path = os.path.join(root_dir, "models") 
     try:
-        hand_module = HandEngine(model_dir=model_path)
-        hand_module.start(hand_command_queue, sfx_command_queue)
+        hand_engine = HandEngine(model_dir=model_path)
+        vision_module = VisionModule(engines=[hand_engine], sfx_command_queue=sfx_command_queue)
+        vision_module.start(hand_command_queue)
     except Exception as e:
-        print(f"[Hand Module Error] {e}")
+        print(f"[Vision Module Error] {e}")
 
 def run_stt_module():
     print("[Launcher] Starting STT Module (voice)...")
@@ -144,10 +149,10 @@ if __name__ == "__main__":
     # Define the processes
     hand_command_queue = multiprocessing.Queue()
     sfx_command_queue = multiprocessing.Queue()
-    hand_process = multiprocessing.Process(
-        target=run_hand_module,
+    vision_process = multiprocessing.Process(
+        target=run_vision_module,
         args=(hand_command_queue, sfx_command_queue),
-        name="Jarvis-Hand",
+        name="Jarvis-Vision",
     )
     stt_process = multiprocessing.Process(target=run_stt_module, name="Jarvis-STT")
     server_process = multiprocessing.Process(target=run_server, name="Jarvis-API")
@@ -158,7 +163,7 @@ if __name__ == "__main__":
     )
 
     # Start all systems
-    hand_process.start()
+    vision_process.start()
     stt_process.start()
     server_process.start()
     sfx_process.start()
@@ -186,7 +191,7 @@ if __name__ == "__main__":
             # as a full Jarvis shutdown trigger.
             if not all(
                 [
-                    hand_process.is_alive(),
+                    vision_process.is_alive(),
                     stt_process.is_alive(),
                     server_process.is_alive(),
                     sfx_process.is_alive(),
@@ -199,7 +204,7 @@ if __name__ == "__main__":
         print("[Launcher] Manual shutdown initiated.")
     finally:
         shutdown_event.set()
-        hand_process.terminate()
+        vision_process.terminate()
         stt_process.terminate()
         server_process.terminate()
         sfx_process.terminate()

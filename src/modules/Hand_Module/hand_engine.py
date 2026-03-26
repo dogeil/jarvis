@@ -206,3 +206,28 @@ class HandEngine:
         finally:
             cap.release()
             cv2.destroyAllWindows()
+
+
+# ---------------------------------------------------------------------------
+# Compatibility shim: Hand_Module now forwards to Vision_Module.
+# This keeps older imports working, while the real camera loop lives in
+# `jarvis/src/modules/Vision_Module/vision_module.py`.
+# ---------------------------------------------------------------------------
+
+from ..Vision_Module.vision_module import VisionModule
+from ..Vision_Module.engines.hand_engine import HandEngine as _VisionHandEngine
+
+
+class HandEngine(_VisionHandEngine):
+    """
+    Backwards-compatible wrapper for the old Hand module entrypoint.
+
+    - Keeps the name `HandEngine` for older imports.
+    - Reuses the new Vision engine implementation for processing/drawing.
+    - Provides the old `.start(command_queue, sfx_command_queue)` entrypoint by
+      forwarding to `VisionModule`.
+    """
+
+    def start(self, command_queue=None, sfx_command_queue=None):
+        vision_module = VisionModule(engines=[self], sfx_command_queue=sfx_command_queue)
+        vision_module.start(command_queue)
