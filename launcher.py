@@ -4,6 +4,7 @@ import uvicorn
 import time
 import os
 import sys
+import cv2
 
 # Ensure the 'src' directory is in the path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), 'src')))
@@ -13,6 +14,39 @@ from src.modules.TTS_Module.tts_engine import TTSEngine
 from src.modules.SFX_Module.sfx_engine import SFXEngine
 from src.modules.Vision_Module.vision_module import VisionModule
 from src.modules.Vision_Module.engines.hand_engine import HandEngine
+
+
+def _is_camera_available(index: int = 0) -> bool:
+    """Best-effort camera probe used at launcher startup."""
+    cap = cv2.VideoCapture(index, cv2.CAP_DSHOW)
+    try:
+        if not cap.isOpened():
+            return False
+        ret, frame = cap.read()
+        return bool(ret and frame is not None)
+    finally:
+        cap.release()
+
+
+def _ask_start_without_vision() -> bool:
+    """
+    Ask the user whether to continue without the vision module.
+    Returns True to continue, False to close launcher.
+    """
+    print("\n[Warning] No camera/video input device detected.")
+    print("[Warning] Vision module cannot start.")
+    print("[Warning] Continue running Jarvis without vision? (y/n)")
+    while True:
+        try:
+            answer = input("> ").strip().lower()
+        except (EOFError, KeyboardInterrupt):
+            return False
+        if answer in {"y", "yes"}:
+            return True
+        if answer in {"n", "no"}:
+            return False
+        print("[Launcher] Please answer with 'y' or 'n'.")
+
 
 def run_vision_module(
     hand_command_queue: "multiprocessing.Queue",
@@ -146,14 +180,25 @@ if __name__ == "__main__":
     multiprocessing.freeze_support()
     print("--- INITIALIZING JARVIS CORE ---")
 
+    vision_enabled = True
+    if not _is_camera_available():
+        continue_without_vision = _ask_start_without_vision()
+        if continue_without_vision:
+            vision_enabled = False
+        else:
+            print("[Launcher] Startup canceled by user (no camera available).")
+            sys.exit(0)
+
     # Define the processes
     hand_command_queue = multiprocessing.Queue()
     sfx_command_queue = multiprocessing.Queue()
-    vision_process = multiprocessing.Process(
-        target=run_vision_module,
-        args=(hand_command_queue, sfx_command_queue),
-        name="Jarvis-Vision",
-    )
+    vision_process = None
+    if vision_enabled:
+        vision_process = multiprocessing.Process(
+            target=run_vision_module,
+            args=(hand_command_queue, sfx_command_queue),
+            name="Jarvis-Vision",
+        )
     stt_process = multiprocessing.Process(target=run_stt_module, name="Jarvis-STT")
     server_process = multiprocessing.Process(target=run_server, name="Jarvis-API")
     sfx_process = multiprocessing.Process(
@@ -163,7 +208,10 @@ if __name__ == "__main__":
     )
 
     # Start all systems
-    vision_process.start()
+    if vision_process is not None:
+        vision_process.start()
+    else:
+        print("[Launcher] Vision module disabled. Running in voice/API mode.")
     stt_process.start()
     server_process.start()
     sfx_process.start()
@@ -189,14 +237,11 @@ if __name__ == "__main__":
         while not shutdown_event.is_set():
             # If ESC is pressed in the Hand window, Hand module exits; we treat that
             # as a full Jarvis shutdown trigger.
-            if not all(
-                [
-                    vision_process.is_alive(),
-                    stt_process.is_alive(),
-                    server_process.is_alive(),
-                    sfx_process.is_alive(),
-                ]
-            ):
+            critical_alive = [stt_process.is_alive(), server_process.is_alive(), sfx_process.is_alive()]
+            if vision_process is not None:
+                critical_alive.append(vision_process.is_alive())
+
+            if not all(critical_alive):
                 print("[Launcher] A critical process died. Shutting down...")
                 break
             time.sleep(0.2)
@@ -204,7 +249,8 @@ if __name__ == "__main__":
         print("[Launcher] Manual shutdown initiated.")
     finally:
         shutdown_event.set()
-        vision_process.terminate()
+        if vision_process is not None and vision_process.is_alive():
+            vision_process.terminate()
         stt_process.terminate()
         server_process.terminate()
         sfx_process.terminate()
