@@ -30,8 +30,8 @@ class VisionModule:
     def start(self, command_queue=None):
         cap = cv2.VideoCapture(0, cv2.CAP_DSHOW)
 
-        default_width = 1024
-        default_height = 768
+        default_width = 640
+        default_height = 480
         current_width = default_width
         current_height = default_height
         requested_width = default_width
@@ -56,6 +56,26 @@ class VisionModule:
                                 requested_width, requested_height = int(cmd[1]), int(cmd[2])
                             elif cmd[0] == "default":
                                 requested_width, requested_height = default_width, default_height
+                            elif cmd[0] == "face_n":
+                                n = int(cmd[1])
+                                for engine in self.engines:
+                                    setter = getattr(engine, "set_recognize_every_n_frames", None)
+                                    if callable(setter):
+                                        setter(n)
+                                print(f"[Vision] Face recognition cadence set to every {n} frames.")
+                            elif cmd[0] == "face_reload":
+                                for engine in self.engines:
+                                    reload_fn = getattr(engine, "reload_face_models", None)
+                                    if callable(reload_fn):
+                                        reload_fn()
+                                print("[Vision] Face models/gallery reloaded.")
+                            elif cmd[0] == "gaze_n":
+                                n = int(cmd[1])
+                                for engine in self.engines:
+                                    setter = getattr(engine, "set_gaze_every_n_frames", None)
+                                    if callable(setter):
+                                        setter(n)
+                                print(f"[Vision] Gaze cadence set to every {n} frames.")
                             elif cmd[0] in {"quit", "exit"}:
                                 cap.release()
                                 cv2.destroyAllWindows()

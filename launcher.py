@@ -14,6 +14,8 @@ from src.modules.TTS_Module.tts_engine import TTSEngine
 from src.modules.SFX_Module.sfx_engine import SFXEngine
 from src.modules.Vision_Module.vision_module import VisionModule
 from src.modules.Vision_Module.engines.hand_engine import HandEngine
+from src.modules.Vision_Module.engines.face_engine import FaceEngine
+from src.modules.Vision_Module.engines.gaze_engine import GazeEngine
 
 
 def _is_camera_available(index: int = 0) -> bool:
@@ -57,7 +59,15 @@ def run_vision_module(
     model_path = os.path.join(root_dir, "models") 
     try:
         hand_engine = HandEngine(model_dir=model_path)
-        vision_module = VisionModule(engines=[hand_engine], sfx_command_queue=sfx_command_queue)
+        face_models_dir = os.path.join(model_path, "face")
+        known_faces_dir = os.path.join(root_dir, "known_faces")
+        face_engine = FaceEngine(model_dir=face_models_dir, known_faces_dir=known_faces_dir)
+        gaze_model_path = os.path.join(face_models_dir, "face_landmarker.task")
+        gaze_engine = GazeEngine(model_path=gaze_model_path, face_engine=face_engine, gaze_every_n_frames=5)
+        vision_module = VisionModule(
+            engines=[hand_engine, face_engine, gaze_engine],
+            sfx_command_queue=sfx_command_queue,
+        )
         vision_module.start(hand_command_queue)
     except Exception as e:
         print(f"[Vision Module Error] {e}")
@@ -117,6 +127,8 @@ def console_loop(hand_command_queue: "multiprocessing.Queue", sfx_command_queue:
     """Read commands from the main console."""
     print("[Console] Type commands here. Use /quit to stop Jarvis.")
     print("[Console] Resolution: /res <width> <height>, /default")
+    print("[Console] Face: /face_n <N> (recognize every N frames), /face_reload")
+    print("[Console] Gaze: /gaze_n <N> (estimate gaze every N frames)")
     print("[Console] Sound FX: /sfx <file.wav> (absolute path or file under ./sounds)")
     while True:
         try:
@@ -163,6 +175,40 @@ def console_loop(hand_command_queue: "multiprocessing.Queue", sfx_command_queue:
 
         if cmd in {"default", "reset"}:
             hand_command_queue.put(("default",))
+            continue
+
+        if cmd in {"face_n", "facen"}:
+            if len(parts) != 2:
+                print("[Console] Usage: /face_n <N>")
+                continue
+            try:
+                n = int(parts[1])
+            except ValueError:
+                print("[Console] N must be an integer.")
+                continue
+            if n <= 0:
+                print("[Console] N must be positive.")
+                continue
+            hand_command_queue.put(("face_n", n))
+            continue
+
+        if cmd in {"face_reload", "reload_faces", "reloadface", "reload_face"}:
+            hand_command_queue.put(("face_reload",))
+            continue
+
+        if cmd in {"gaze_n", "gazen"}:
+            if len(parts) != 2:
+                print("[Console] Usage: /gaze_n <N>")
+                continue
+            try:
+                n = int(parts[1])
+            except ValueError:
+                print("[Console] N must be an integer.")
+                continue
+            if n <= 0:
+                print("[Console] N must be positive.")
+                continue
+            hand_command_queue.put(("gaze_n", n))
             continue
 
         if cmd == "sfx":

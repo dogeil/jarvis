@@ -14,6 +14,9 @@ class GestureProcessor:
             (("Victory", "ILoveYou"), 2.0): ("alt", "tab"),
             # Custom trigger: middle finger only -> play vine-boom sound effect.
             (("MIDDLE_FINGER_UP",), 1.0): ("SFX_PLAY", "vine-boom.wav"),
+            # Face engine examples
+            # (("FACE_DETECTED",), 1.5): ("SFX_PLAY", "connect-beep.wav"),
+            # (("FACE_LOST",), 0.5): ("SFX_PLAY", "low-pitch-beep.wav"),
         }
         self.history: List[Tuple[float, str]] = []
         self.prev_active = set()
